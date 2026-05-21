@@ -58,10 +58,10 @@ ORDER_PAGE = """<!DOCTYPE html>
   .email-section { margin-top: 32px; }
   .email-section p { font-size: 15px; color: #444; margin-bottom: 12px; }
   .email-section input { width: 100%; padding: 16px; font-size: 16px; border: 1.5px solid #ddd; border-radius: 8px; outline: none; }
-  .email-section input:focus { border-color: #6B1D2A; }
-  .checkout-btn { display: block; width: 100%; margin-top: 24px; padding: 18px; background: #1a1a1a; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: 500; cursor: pointer; letter-spacing: 0.5px; }
-  .checkout-btn:disabled { background: #999; cursor: not-allowed; }
-  .checkout-btn:active:not(:disabled) { background: #333; }
+  .email-section input:focus { border-color: #b11b21; }
+  .checkout-btn { display: block; width: 100%; margin-top: 24px; padding: 18px; background: #b11b21; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: 500; cursor: pointer; letter-spacing: 0.5px; }
+  .checkout-btn:disabled { background: #f5f6ee; color: #999; cursor: not-allowed; }
+  .checkout-btn:active:not(:disabled) { background: #640003; }
   .error { color: #c0392b; margin-top: 12px; font-size: 14px; text-align: center; }
 </style>
 </head>
