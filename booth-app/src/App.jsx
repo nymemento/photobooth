@@ -4,6 +4,7 @@ import homeBg from "../assets/home-bg.png";
 import countdownVideo from "../assets/countdown.mp4";
 import startBg from "../assets/start-bg.png";
 import endVideo from "../assets/end-video.mp4";
+import previewBg from "../assets/preview-bg.jpg";
 
 const API_URL = import.meta.env.VITE_API_URL || "https://photobooth-production-e5fa.up.railway.app";
 
@@ -348,15 +349,18 @@ export default function App() {
       )}
 
       {state === STATES.PREVIEW && photos.length > 0 && (
-        <div className="fixed inset-0 bg-black flex items-center justify-center">
+        <div className="fixed inset-0 flex items-center justify-center">
+          <img
+            src={previewBg}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+          />
           <img
             src={photos[photos.length - 1]}
             alt="Preview"
-            className="max-h-full max-w-full object-contain"
+            className="relative z-10 rounded-2xl shadow-2xl object-cover"
+            style={{ width: "28%", aspectRatio: "4/3" }}
           />
-          <p className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/60 text-lg">
-            Photo {photos.length} of 4
-          </p>
           <video
             ref={videoRef}
             autoPlay
