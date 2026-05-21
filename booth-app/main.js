@@ -124,12 +124,25 @@ ipcMain.handle("print-strip", async (_event, sheetPath) => {
   return new Promise((resolve) => {
     if (process.platform === "win32") {
       execFile(
-        "powershell",
-        ["-Command", `Start-Process -FilePath "${sheetPath}" -Verb Print`],
+        "rundll32",
+        ["shimgvw.dll,ImageView_PrintTo", `/pt`, sheetPath, ""],
+        { timeout: 30000 },
         (err) => {
           if (err) {
-            console.error("Print error:", err);
-            resolve({ success: false, error: err.message });
+            console.error("Print via shimgvw failed, trying fallback:", err);
+            execFile(
+              "mspaint",
+              ["/p", sheetPath],
+              { timeout: 30000 },
+              (err2) => {
+                if (err2) {
+                  console.error("Print fallback failed:", err2);
+                  resolve({ success: false, error: err2.message });
+                } else {
+                  resolve({ success: true });
+                }
+              }
+            );
           } else {
             resolve({ success: true });
           }
