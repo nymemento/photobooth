@@ -35,7 +35,7 @@ TWILIO_AUTH = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE = os.getenv("TWILIO_PHONE_NUMBER")
 
 resend.api_key = os.getenv("RESEND_API_KEY")
-RESEND_FROM = os.getenv("RESEND_FROM_EMAIL", "Memento <photos@newyorkmemento.com>")
+RESEND_FROM = os.getenv("RESEND_FROM_EMAIL", "Memento <hello@newyorkmemento.com>")
 
 SESSIONS_DIR = os.getenv("SESSIONS_DIR", "/data")
 SESSIONS_FILE = os.path.join(SESSIONS_DIR, "sessions.json")
