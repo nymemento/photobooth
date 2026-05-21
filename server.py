@@ -322,7 +322,7 @@ async def generate_qr():
     qr.add_data(order_url)
     qr.make(fit=True)
 
-    img = qr.make_image(fill_color="black", back_color="white")
+    img = qr.make_image(fill_color="#3B3530", back_color="#cdc2b0")
     buffer = BytesIO()
     img.save(buffer, format="PNG")
     img_str = base64.b64encode(buffer.getvalue()).decode()

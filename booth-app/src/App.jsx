@@ -32,6 +32,9 @@ export default function App() {
   const [flash, setFlash] = useState(false);
   const [pollingSince, setPollingSince] = useState("");
   const [error, setError] = useState("");
+  const [printQty, setPrintQty] = useState(0);
+  const [qrPos, setQrPos] = useState({ x: 0, y: 0 });
+  const dragRef = useRef(null);
 
   const videoRef = useRef(null);
   const countdownRef = useRef(null);
@@ -107,6 +110,7 @@ export default function App() {
       setSheetPath("");
       setEmail("");
       setPhotoIndex(0);
+      setPrintQty(0);
       setError("");
       fetchQR();
     }
@@ -119,6 +123,7 @@ export default function App() {
         const res = await axios.get(`${API_URL}/session/latest`, { params: { since: pollingSince } });
         if (res.data.valid) {
           setSessionId(res.data.session_id);
+          setPrintQty(res.data.print_qty || 0);
           clearInterval(pollingRef.current);
           setState(STATES.READY);
         }
@@ -188,17 +193,19 @@ export default function App() {
     if (state !== STATES.PRINT) return;
 
     const print = async () => {
-      try {
-        if (window.booth && sheetPath) {
-          await window.booth.printStrip(sheetPath);
+      if (printQty > 0) {
+        try {
+          if (window.booth && sheetPath) {
+            await window.booth.printStrip(sheetPath);
+          }
+        } catch (err) {
+          console.error("Print failed:", err);
         }
-      } catch (err) {
-        console.error("Print failed:", err);
       }
-      setTimeout(() => setState(STATES.EMAIL), 2000);
+      setTimeout(() => setState(STATES.COMPLETE), 2000);
     };
     print();
-  }, [state, sheetPath]);
+  }, [state, sheetPath, printQty]);
 
   const handleStart = async () => {
     try {
@@ -209,20 +216,6 @@ export default function App() {
       setError("Session error. Please try again.");
       setTimeout(() => setState(STATES.IDLE), 3000);
     }
-  };
-
-  const handleSendEmail = async () => {
-    if (!email) {
-      setState(STATES.COMPLETE);
-      return;
-    }
-    try {
-      await axios.post(`${API_URL}/email/send`, {
-        email,
-        image: stripPreview,
-      });
-    } catch {}
-    setState(STATES.COMPLETE);
   };
 
   const endVideoRef = useRef(null);
@@ -255,7 +248,24 @@ export default function App() {
             className="w-full h-full object-cover"
           />
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <div className="mt-[8%]">
+            <div
+              ref={dragRef}
+              style={{ transform: `translate(${qrPos.x}px, ${qrPos.y}px)` }}
+              className="mt-[8%] cursor-grab active:cursor-grabbing touch-none"
+              onPointerDown={(e) => {
+                const el = e.currentTarget;
+                el.setPointerCapture(e.pointerId);
+                const startX = e.clientX - qrPos.x;
+                const startY = e.clientY - qrPos.y;
+                const onMove = (ev) => setQrPos({ x: ev.clientX - startX, y: ev.clientY - startY });
+                const onUp = () => {
+                  el.removeEventListener("pointermove", onMove);
+                  el.removeEventListener("pointerup", onUp);
+                };
+                el.addEventListener("pointermove", onMove);
+                el.addEventListener("pointerup", onUp);
+              }}
+            >
               {qrCode ? (
                 <img
                   src={`data:image/png;base64,${qrCode}`}
@@ -266,12 +276,6 @@ export default function App() {
                 <div className="w-56 h-56 rounded-lg bg-white/20 backdrop-blur animate-pulse" />
               )}
             </div>
-            {state === STATES.POLLING && (
-              <div className="mt-6 flex items-center gap-3 text-white/80 text-lg drop-shadow-lg">
-                <span className="w-2.5 h-2.5 bg-white/60 rounded-full animate-pulse" />
-                Waiting for payment...
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -333,42 +337,6 @@ export default function App() {
         </div>
       )}
 
-      {state === STATES.EMAIL && (
-        <div className="text-center flex flex-col items-center gap-8 w-full max-w-lg px-8">
-          {stripPreview && (
-            <img
-              src={stripPreview}
-              alt="Your photo strip"
-              className="h-[40vh] rounded-lg shadow-xl"
-            />
-          )}
-          <p className="text-2xl text-burgundy font-display">
-            Want a digital copy?
-          </p>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="your@email.com"
-            className="w-full text-2xl text-center py-4 px-6 rounded-xl border-2 border-burgundy/30 bg-white focus:border-burgundy focus:outline-none"
-            autoFocus
-          />
-          <div className="flex gap-4 w-full">
-            <button
-              onClick={() => setState(STATES.COMPLETE)}
-              className="flex-1 text-xl py-4 rounded-xl border-2 border-burgundy/30 text-burgundy/60"
-            >
-              Skip
-            </button>
-            <button
-              onClick={handleSendEmail}
-              className="flex-1 text-xl py-4 rounded-xl bg-burgundy text-cream font-semibold"
-            >
-              Send
-            </button>
-          </div>
-        </div>
-      )}
 
       {state === STATES.COMPLETE && (
         <div className="fixed inset-0 bg-black">

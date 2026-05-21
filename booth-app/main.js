@@ -49,9 +49,9 @@ ipcMain.handle("create-strip", async (_event, photosBase64) => {
   const sharp = require("sharp");
 
   const stripWidth = 600;
-  const photoHeight = 400;
-  const brandingHeight = 200;
-  const stripHeight = photoHeight * 4 + brandingHeight;
+  const stripHeight = 1800;
+  const photoHeight = 390;
+  const photoTops = [38, 495, 949, 1397];
 
   const composite = [];
 
@@ -59,8 +59,14 @@ ipcMain.handle("create-strip", async (_event, photosBase64) => {
     const buf = Buffer.from(photosBase64[i].replace(/^data:image\/\w+;base64,/, ""), "base64");
     const resized = await sharp(buf)
       .resize(stripWidth, photoHeight, { fit: "cover" })
+      .greyscale()
+      .normalize()
+      .linear(2.05, -51)
+      .modulate({ brightness: 0.82 })
+      .gamma(1.05)
+      .tint({ r: 216, g: 204, b: 189 })
       .toBuffer();
-    composite.push({ input: resized, top: i * photoHeight, left: 0 });
+    composite.push({ input: resized, top: photoTops[i], left: 0 });
   }
 
   const overlayPath = path.join(__dirname, "assets", "overlay.png");
