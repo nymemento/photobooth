@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, globalShortcut } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { execFile } = require("child_process");
@@ -7,6 +7,14 @@ let mainWindow;
 
 const isDev = !app.isPackaged;
 
+function setupAutoStart() {
+  if (isDev || process.platform !== "win32") return;
+  app.setLoginItemSettings({
+    openAtLogin: true,
+    path: process.execPath,
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     fullscreen: !isDev,
@@ -14,6 +22,8 @@ function createWindow() {
     frame: isDev,
     width: 1080,
     height: 1920,
+    alwaysOnTop: !isDev,
+    skipTaskbar: !isDev,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -28,6 +38,35 @@ function createWindow() {
   }
 
   mainWindow.webContents.on("context-menu", (e) => e.preventDefault());
+
+  if (!isDev) {
+    mainWindow.on("close", (e) => {
+      e.preventDefault();
+    });
+
+    mainWindow.webContents.on("before-input-event", (_e, input) => {
+      const blocked =
+        (input.alt && input.key === "F4") ||
+        (input.alt && input.key === "Tab") ||
+        (input.meta && input.key === "d") ||
+        input.key === "F11";
+      if (blocked) _e.preventDefault();
+    });
+
+    mainWindow.webContents.on("did-fail-load", () => {
+      setTimeout(() => {
+        mainWindow.loadFile(path.join(__dirname, "dist", "index.html"));
+      }, 3000);
+    });
+
+    mainWindow.webContents.on("render-process-gone", () => {
+      mainWindow.webContents.reload();
+    });
+
+    mainWindow.webContents.on("unresponsive", () => {
+      mainWindow.webContents.reload();
+    });
+  }
 
   if (isDev) {
     mainWindow.webContents.openDevTools({ mode: "detach" });
@@ -59,11 +98,21 @@ function cleanupOldPhotos() {
 app.whenReady().then(() => {
   fs.mkdirSync(outputDir, { recursive: true });
   cleanupOldPhotos();
+  setupAutoStart();
   createWindow();
+
+  if (!isDev) {
+    globalShortcut.register("Alt+F4", () => {});
+    globalShortcut.register("Alt+Tab", () => {});
+    globalShortcut.register("Super+D", () => {});
+    globalShortcut.register("Super+E", () => {});
+    globalShortcut.register("Super+R", () => {});
+    globalShortcut.register("Ctrl+Alt+Delete", () => {});
+  }
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (isDev && process.platform !== "darwin") app.quit();
 });
 
 ipcMain.handle("create-strip", async (_event, photosBase64) => {
