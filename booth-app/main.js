@@ -120,8 +120,8 @@ ipcMain.handle("create-strip", async (_event, photosBase64) => {
 
   const stripWidth = 600;
   const stripHeight = 1800;
-  const photoHeight = 390;
-  const photoTops = [38, 495, 949, 1397];
+  const photoHeight = 400;
+  const photoTops = [33, 490, 944, 1392];
 
   const composite = [];
 

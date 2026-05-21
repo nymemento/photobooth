@@ -36,7 +36,12 @@ export default function App() {
   const [error, setError] = useState("");
   const [printQty, setPrintQty] = useState(0);
   const [downloadQty, setDownloadQty] = useState(0);
-  const [qrPos, setQrPos] = useState({ x: 0, y: 0 });
+  const [qrPos, setQrPos] = useState(() => {
+    try {
+      const saved = localStorage.getItem("qrPos");
+      return saved ? JSON.parse(saved) : { x: 0, y: 0 };
+    } catch { return { x: 0, y: 0 }; }
+  });
   const [adminTaps, setAdminTaps] = useState(0);
   const adminTimerRef = useRef(null);
   const dragRef = useRef(null);
@@ -115,6 +120,10 @@ export default function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem("qrPos", JSON.stringify(qrPos)); } catch {}
+  }, [qrPos]);
 
   useEffect(() => {
     if (state === STATES.IDLE) {
