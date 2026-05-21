@@ -474,8 +474,19 @@ async def send_email(request: Request):
         resend.Emails.send({
             "from": RESEND_FROM,
             "to": [to_email],
-            "subject": "Your photo strip from New York Memento",
-            "html": "<p>Thanks for visiting New York Memento! Here's your photo strip.</p>",
+            "subject": "THIS MOMENT IS HOT, HANDLE WITH CARE",
+            "html": (
+                "<p>Hey you, thanks for stopping by Memento!<br>"
+                "The booth misses you already.</p>"
+                "<p>That strip in your hand is yours now &mdash; keep it, post it, tuck it away. "
+                "If it finds its way to your grid, tag us "
+                "<a href='https://instagram.com/newyorkmemento'>@newyorkmemento</a> "
+                "so we can see how it lives beyond the booth.</p>"
+                "<p>Join us over on Substack for cultural dispatches, early access to collaborations, "
+                "and thoughts on tangible presence in our hyper-digitized world: "
+                "<a href='https://therealnessrenaissance.substack.com'>therealnessrenaissance.substack.com</a>.</p>"
+                "<p>xx,<br>Memento</p>"
+            ),
             "attachments": [
                 {
                     "filename": "memento-strip.jpg",
