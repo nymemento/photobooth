@@ -176,13 +176,22 @@ export default function App() {
 
     const process = async () => {
       try {
+        let strip;
         if (window.booth) {
           const result = await window.booth.createStrip(photos);
-          setStripPreview(result.stripBase64);
+          strip = result.stripBase64;
+          setStripPreview(strip);
           setSheetPath(result.sheetPath);
         } else {
-          setStripPreview(photos[0]);
+          strip = photos[0];
+          setStripPreview(strip);
         }
+
+        axios.post(`${API_URL}/photos/upload`, {
+          session_id: sessionId,
+          image: strip,
+        }).catch((err) => console.error("Photo backup failed:", err));
+
         setState(STATES.PRINT);
       } catch (err) {
         setError("Failed to create strip: " + err.message);

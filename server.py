@@ -34,12 +34,13 @@ TWILIO_PHONE = os.getenv("TWILIO_PHONE_NUMBER")
 SESSIONS_DIR = os.getenv("SESSIONS_DIR", "/data")
 SESSIONS_FILE = os.path.join(SESSIONS_DIR, "sessions.json")
 SESSIONS_BACKUP = os.path.join(SESSIONS_DIR, "sessions.backup.json")
+PHOTOS_DIR = os.path.join(SESSIONS_DIR, "photos")
 SESSION_MAX_AGE_DAYS = 30
 
 
 def _ensure_dir():
-    """Create sessions directory if it doesn't exist."""
     os.makedirs(SESSIONS_DIR, exist_ok=True)
+    os.makedirs(PHOTOS_DIR, exist_ok=True)
 
 
 def load_sessions():
@@ -446,6 +447,132 @@ async def send_sms(request: Request):
     except Exception as e:
         print(f"MMS failed to {phone}: {e}")
         raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/photos/upload")
+async def upload_photo(request: Request):
+    data = await request.json()
+    session_id = data.get("session_id", "")
+    image_base64 = data.get("image", "")
+
+    if not session_id or not image_base64:
+        raise HTTPException(status_code=400, detail="session_id and image required")
+
+    image_data = base64.b64decode(image_base64.replace("data:image/jpeg;base64,", ""))
+    photo_path = os.path.join(PHOTOS_DIR, f"{session_id}.jpg")
+    with open(photo_path, "wb") as f:
+        f.write(image_data)
+
+    if session_id in sessions:
+        sessions[session_id]["has_photo"] = True
+        save_sessions()
+
+    print(f"Photo saved for session {session_id} ({len(image_data)} bytes)")
+    return {"status": "saved", "session_id": session_id}
+
+
+@app.get("/admin/photos/{session_id}/image")
+async def get_photo(session_id: str):
+    photo_path = os.path.join(PHOTOS_DIR, f"{session_id}.jpg")
+    if not os.path.exists(photo_path):
+        raise HTTPException(status_code=404, detail="Photo not found")
+    with open(photo_path, "rb") as f:
+        return Response(content=f.read(), media_type="image/jpeg")
+
+
+ADMIN_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memento Admin — Photos</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f8f8f8; color: #1a1a1a; padding: 24px; }
+  h1 { font-size: 24px; font-weight: 300; letter-spacing: 2px; margin-bottom: 24px; }
+  .search { display: flex; gap: 12px; margin-bottom: 24px; }
+  .search input { flex: 1; padding: 12px 16px; font-size: 16px; border: 1.5px solid #ddd; border-radius: 8px; outline: none; }
+  .search input:focus { border-color: #b11b21; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+  .card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .card img { width: 100%; cursor: pointer; }
+  .card .info { padding: 16px; font-size: 14px; }
+  .card .info .phone { font-weight: 500; font-size: 16px; margin-bottom: 4px; }
+  .card .info .meta { color: #888; }
+  .card .actions { padding: 0 16px 16px; display: flex; gap: 8px; }
+  .card .actions a { padding: 8px 16px; border-radius: 6px; font-size: 13px; text-decoration: none;
+    background: #b11b21; color: white; }
+  .empty { text-align: center; color: #999; padding: 60px 0; font-size: 18px; }
+</style>
+</head>
+<body>
+<h1>MEMENTO — Photo Lookup</h1>
+<div class="search">
+  <input type="text" id="search" placeholder="Search by phone number..." oninput="filter()">
+</div>
+<div class="grid" id="grid"></div>
+<div class="empty" id="empty" style="display:none">No matching sessions found.</div>
+<script>
+let allSessions = [];
+
+async function load() {
+  const res = await fetch('/admin/photos/data');
+  allSessions = await res.json();
+  render(allSessions);
+}
+
+function filter() {
+  const q = document.getElementById('search').value.replace(/\\D/g, '');
+  if (!q) { render(allSessions); return; }
+  render(allSessions.filter(s => s.phone.includes(q)));
+}
+
+function render(sessions) {
+  const grid = document.getElementById('grid');
+  const empty = document.getElementById('empty');
+  if (sessions.length === 0) { grid.innerHTML = ''; empty.style.display = ''; return; }
+  empty.style.display = 'none';
+  grid.innerHTML = sessions.map(s => `
+    <div class="card">
+      <img src="/admin/photos/${s.session_id}/image" alt="Photo strip"
+           onclick="window.open(this.src, '_blank')" loading="lazy">
+      <div class="info">
+        <div class="phone">${s.phone || 'No phone'}</div>
+        <div class="meta">${s.date} &middot; $${(s.amount/100).toFixed(2)}</div>
+      </div>
+      <div class="actions">
+        <a href="/admin/photos/${s.session_id}/image" download="${s.session_id}.jpg">Download</a>
+      </div>
+    </div>
+  `).join('');
+}
+
+load();
+</script>
+</body>
+</html>"""
+
+
+@app.get("/admin/photos", response_class=HTMLResponse)
+async def admin_photos_page():
+    return ADMIN_PAGE
+
+
+@app.get("/admin/photos/data")
+async def admin_photos_data():
+    results = []
+    for sid, session in sorted(sessions.items(), key=lambda x: x[1].get("created_at", ""), reverse=True):
+        if not session.get("has_photo"):
+            continue
+        results.append({
+            "session_id": sid,
+            "phone": session.get("phone", ""),
+            "date": session.get("created_at", "")[:16].replace("T", " "),
+            "amount": session.get("amount", 0),
+            "print_qty": session.get("print_qty", 0),
+            "download_qty": session.get("download_qty", 0),
+        })
+    return results
 
 
 @app.get("/qr/generate")
