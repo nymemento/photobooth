@@ -273,9 +273,11 @@ async def check_session(token: str):
 
 
 @app.get("/session/latest")
-async def latest_session():
+async def latest_session(since: str = ""):
     for sid, session in reversed(list(sessions.items())):
         if not session["used"]:
+            if since and session["created_at"] <= since:
+                continue
             return {
                 "valid": True,
                 "session_id": sid,

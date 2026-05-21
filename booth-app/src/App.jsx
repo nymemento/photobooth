@@ -30,6 +30,7 @@ export default function App() {
   const [sheetPath, setSheetPath] = useState("");
   const [email, setEmail] = useState("");
   const [flash, setFlash] = useState(false);
+  const [pollingSince, setPollingSince] = useState("");
   const [error, setError] = useState("");
 
   const videoRef = useRef(null);
@@ -73,6 +74,7 @@ export default function App() {
     try {
       const res = await axios.get(`${API_URL}/qr/generate`);
       setQrCode(res.data.qr_code);
+      setPollingSince(new Date().toISOString());
       setState(STATES.POLLING);
     } catch {
       setError("Cannot reach server. Check connection.");
@@ -114,7 +116,7 @@ export default function App() {
     if (state !== STATES.POLLING) return;
     pollingRef.current = setInterval(async () => {
       try {
-        const res = await axios.get(`${API_URL}/session/latest`);
+        const res = await axios.get(`${API_URL}/session/latest`, { params: { since: pollingSince } });
         if (res.data.valid) {
           setSessionId(res.data.session_id);
           clearInterval(pollingRef.current);
@@ -123,7 +125,7 @@ export default function App() {
       } catch {}
     }, 2000);
     return () => clearInterval(pollingRef.current);
-  }, [state]);
+  }, [state, pollingSince]);
 
   useEffect(() => {
     if (state !== STATES.COUNTDOWN) return;
