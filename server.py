@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 import stripe
 import os
 from datetime import datetime
@@ -30,10 +30,20 @@ PRODUCTS = {
     "download": {"name": "Download (e-mail)", "amount": 555},
 }
 
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "logo.png")
+
 
 @app.get("/")
 async def root():
     return {"status": "Memento Booth API is running", "timestamp": datetime.now().isoformat()}
+
+
+@app.get("/logo.png")
+async def serve_logo():
+    if os.path.exists(LOGO_PATH):
+        with open(LOGO_PATH, "rb") as f:
+            return Response(content=f.read(), media_type="image/png")
+    raise HTTPException(status_code=404, detail="Logo not found")
 
 
 ORDER_PAGE = """<!DOCTYPE html>
@@ -45,8 +55,8 @@ ORDER_PAGE = """<!DOCTYPE html>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f8f8f8; color: #1a1a1a; min-height: 100vh; }
-  .header { background: #f0ede8; padding: 40px 20px; text-align: center; }
-  .header h1 { font-size: 32px; font-weight: 300; letter-spacing: 2px; }
+  .header { background: #f0ede8; padding: 30px 20px; text-align: center; }
+  .header img { height: 50px; }
   .container { max-width: 480px; margin: 0 auto; padding: 24px 20px; }
   .product { display: flex; justify-content: space-between; align-items: center; padding: 24px 0; border-bottom: 1px solid #e5e5e5; }
   .product-info h2 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
@@ -66,7 +76,7 @@ ORDER_PAGE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-<div class="header"><h1>Memento</h1></div>
+<div class="header"><img src="/logo.png" alt="Memento"></div>
 <div class="container">
   <div class="product">
     <div class="product-info">
