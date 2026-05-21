@@ -37,6 +37,8 @@ export default function App() {
   const [printQty, setPrintQty] = useState(0);
   const [downloadQty, setDownloadQty] = useState(0);
   const [qrPos, setQrPos] = useState({ x: 0, y: 0 });
+  const [adminTaps, setAdminTaps] = useState(0);
+  const adminTimerRef = useRef(null);
   const dragRef = useRef(null);
 
   const videoRef = useRef(null);
@@ -270,6 +272,19 @@ export default function App() {
     }
   };
 
+  const handleAdminTap = useCallback(() => {
+    setAdminTaps((prev) => {
+      const next = prev + 1;
+      if (next >= 5) {
+        if (window.booth?.exitKiosk) window.booth.exitKiosk();
+        return 0;
+      }
+      clearTimeout(adminTimerRef.current);
+      adminTimerRef.current = setTimeout(() => setAdminTaps(0), 3000);
+      return next;
+    });
+  }, []);
+
   const endVideoRef = useRef(null);
 
   useEffect(() => {
@@ -287,6 +302,11 @@ export default function App() {
       {flash && (
         <div className="fixed inset-0 bg-white z-50 animate-pulse" />
       )}
+
+      <div
+        className="fixed top-0 right-0 w-16 h-16 z-[100]"
+        onClick={handleAdminTap}
+      />
 
       {error && (
         <div className="fixed top-8 left-1/2 -translate-x-1/2 bg-red-800 text-white px-8 py-4 rounded-lg text-xl z-40">

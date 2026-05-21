@@ -232,3 +232,14 @@ ipcMain.handle("print-strip", async (_event, sheetPath) => {
 });
 
 ipcMain.handle("get-output-dir", () => outputDir);
+
+ipcMain.handle("exit-kiosk", () => {
+  if (mainWindow) {
+    mainWindow.removeAllListeners("close");
+    mainWindow.setKiosk(false);
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setFullScreen(false);
+  }
+  globalShortcut.unregisterAll();
+  app.quit();
+});
