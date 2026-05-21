@@ -7,6 +7,10 @@ let mainWindow;
 
 const isDev = !app.isPackaged;
 
+app.commandLine.appendSwitch("disable-features", "MediaFoundationVideoCapture");
+app.commandLine.appendSwitch("disable-video-capture-use-gpu-memory-buffer");
+app.commandLine.appendSwitch("enable-media-stream");
+
 function setupAutoStart() {
   if (isDev || process.platform !== "win32") return;
   app.setLoginItemSettings({
@@ -74,6 +78,11 @@ function createWindow() {
       return;
     }
     callback(false);
+  });
+
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    if (permission === "media") return true;
+    return false;
   });
 
   if (isDev) {

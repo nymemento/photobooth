@@ -59,26 +59,38 @@ export default function App() {
   }, []);
 
   const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      stream.getVideoTracks().forEach((track) => {
-        track.onended = () => {
-          setError("Camera disconnected. Restarting...");
-          stopCamera();
-          setTimeout(() => setState(STATES.IDLE), 3000);
-        };
-      });
-    } catch (err) {
-      setError("Camera not found. Connect Canon R100 via USB in webcam mode.");
-      setTimeout(() => setState(STATES.IDLE), 5000);
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter((d) => d.kind === "videoinput");
+    const canon = videoDevices.find(
+      (d) => d.label.toLowerCase().includes("eos") || d.label.toLowerCase().includes("canon")
+    );
+    const deviceId = canon
+      ? canon.deviceId
+      : videoDevices.length > 1
+        ? videoDevices[videoDevices.length - 1].deviceId
+        : undefined;
+
+    const constraints = {
+      video: {
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+      },
+      audio: false,
+    };
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    streamRef.current = stream;
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
     }
+    stream.getVideoTracks().forEach((track) => {
+      track.onended = () => {
+        setError("Camera disconnected. Restarting...");
+        stopCamera();
+        setTimeout(() => setState(STATES.IDLE), 3000);
+      };
+    });
   }, [stopCamera]);
 
   const captureFrame = useCallback(() => {
@@ -155,6 +167,12 @@ export default function App() {
     }, 2000);
     return () => clearInterval(pollingRef.current);
   }, [state, pollingSince]);
+
+  useEffect(() => {
+    if (videoRef.current && streamRef.current && !videoRef.current.srcObject) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  });
 
   useEffect(() => {
     if (state !== STATES.COUNTDOWN) return;
@@ -273,11 +291,26 @@ export default function App() {
   const handleStart = async () => {
     try {
       await axios.post(`${API_URL}/session/start/${sessionId}`);
-      await startCamera();
-      setState(STATES.COUNTDOWN);
     } catch (err) {
       setError("Session error. Please try again.");
       setTimeout(() => setState(STATES.IDLE), 3000);
+      return;
+    }
+    setState(STATES.COUNTDOWN);
+    await new Promise((r) => setTimeout(r, 150));
+    try {
+      await startCamera();
+    } catch (err) {
+      if (err.name === "NotReadableError") {
+        setError("Camera in use by another app. Close other camera apps.");
+      } else if (err.name === "NotFoundError") {
+        setError("Camera not found. Connect Canon R100 via USB.");
+      } else if (err.name === "NotAllowedError") {
+        setError("Camera permission denied. Restart the app.");
+      } else {
+        setError("Camera error: " + err.message);
+      }
+      setTimeout(() => setState(STATES.IDLE), 5000);
     }
   };
 
@@ -390,7 +423,7 @@ export default function App() {
             autoPlay
             playsInline
             muted
-            className="hidden"
+            style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
           />
           <p className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/60 text-lg">
             Photo {photoIndex + 1} of 4
@@ -416,7 +449,7 @@ export default function App() {
             autoPlay
             playsInline
             muted
-            className="hidden"
+            style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
           />
         </div>
       )}
