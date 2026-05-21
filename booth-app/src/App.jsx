@@ -46,6 +46,13 @@ export default function App() {
   const streamRef = useRef(null);
   const pollingRef = useRef(null);
 
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
   const startCamera = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -68,13 +75,6 @@ export default function App() {
       setTimeout(() => setState(STATES.IDLE), 5000);
     }
   }, [stopCamera]);
-
-  const stopCamera = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-  }, []);
 
   const captureFrame = useCallback(() => {
     const video = videoRef.current;
@@ -344,10 +344,10 @@ export default function App() {
                 <img
                   src={`data:image/png;base64,${qrCode}`}
                   alt="Scan to pay"
-                  className="w-56 h-56 rounded-lg shadow-2xl"
+                  className="w-40 h-40 rounded-lg shadow-2xl"
                 />
               ) : (
-                <div className="w-56 h-56 rounded-lg bg-white/20 backdrop-blur animate-pulse" />
+                <div className="w-40 h-40 rounded-lg bg-white/20 backdrop-blur animate-pulse" />
               )}
             </div>
           </div>
