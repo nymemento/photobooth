@@ -5,7 +5,7 @@ import countdownVideo from "../assets/countdown.mp4";
 import startBg from "../assets/start-bg.png";
 import endVideo from "../assets/end-video.mp4";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL || "https://photobooth-production-e5fa.up.railway.app";
 
 const STATES = {
   IDLE: "IDLE",
@@ -73,7 +73,6 @@ export default function App() {
     try {
       const res = await axios.get(`${API_URL}/qr/generate`);
       setQrCode(res.data.qr_code);
-      setSessionId(res.data.session_id);
       setState(STATES.POLLING);
     } catch {
       setError("Cannot reach server. Check connection.");
@@ -115,15 +114,16 @@ export default function App() {
     if (state !== STATES.POLLING) return;
     pollingRef.current = setInterval(async () => {
       try {
-        const res = await axios.get(`${API_URL}/session/check/${sessionId}`);
-        if (res.data.valid && !res.data.used) {
+        const res = await axios.get(`${API_URL}/session/latest`);
+        if (res.data.valid) {
+          setSessionId(res.data.session_id);
           clearInterval(pollingRef.current);
           setState(STATES.READY);
         }
       } catch {}
     }, 2000);
     return () => clearInterval(pollingRef.current);
-  }, [state, sessionId]);
+  }, [state]);
 
   useEffect(() => {
     if (state !== STATES.COUNTDOWN) return;
