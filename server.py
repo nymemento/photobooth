@@ -197,6 +197,7 @@ async def create_checkout(request: Request):
         "mode": "payment",
         "success_url": f"{BASE_URL}/success",
         "cancel_url": f"{BASE_URL}/order",
+        "allow_promotion_codes": True,
         "metadata": {
             "print_qty": str(print_qty),
             "download_qty": str(download_qty),
