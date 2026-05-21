@@ -33,6 +33,7 @@ export default function App() {
   const [pollingSince, setPollingSince] = useState("");
   const [error, setError] = useState("");
   const [printQty, setPrintQty] = useState(0);
+  const [downloadQty, setDownloadQty] = useState(0);
   const [qrPos, setQrPos] = useState({ x: 0, y: 0 });
   const dragRef = useRef(null);
 
@@ -111,6 +112,7 @@ export default function App() {
       setEmail("");
       setPhotoIndex(0);
       setPrintQty(0);
+      setDownloadQty(0);
       setError("");
       fetchQR();
     }
@@ -124,6 +126,7 @@ export default function App() {
         if (res.data.valid) {
           setSessionId(res.data.session_id);
           setPrintQty(res.data.print_qty || 0);
+          setDownloadQty(res.data.download_qty || 0);
           clearInterval(pollingRef.current);
           setState(STATES.READY);
         }
@@ -202,10 +205,22 @@ export default function App() {
           console.error("Print failed:", err);
         }
       }
+
+      if (downloadQty > 0 && stripPreview) {
+        try {
+          await axios.post(`${API_URL}/sms/send`, {
+            session_id: sessionId,
+            image: stripPreview,
+          });
+        } catch (err) {
+          console.error("SMS failed:", err);
+        }
+      }
+
       setTimeout(() => setState(STATES.COMPLETE), 2000);
     };
     print();
-  }, [state, sheetPath, printQty]);
+  }, [state, sheetPath, printQty, downloadQty, stripPreview, sessionId]);
 
   const handleStart = async () => {
     try {

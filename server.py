@@ -3,7 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 import stripe
 import os
+import uuid
 from datetime import datetime
+from twilio.rest import Client as TwilioClient
 import qrcode
 from io import BytesIO
 import base64
@@ -22,12 +24,18 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 BASE_URL = os.getenv("BASE_URL", "https://photobooth-production-e5fa.up.railway.app")
 
+TWILIO_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE = os.getenv("TWILIO_PHONE_NUMBER")
+
 # Keyed by Stripe checkout session id. In-memory only — wiped on Railway restart.
 sessions = {}
+# Temporary media store for MMS images — keyed by random ID.
+media_store = {}
 
 PRODUCTS = {
     "print": {"name": "Print (2 copies)", "amount": 1111},
-    "download": {"name": "Download (e-mail)", "amount": 555},
+    "download": {"name": "Download (text)", "amount": 555},
 }
 
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "logo.png")
@@ -91,7 +99,7 @@ ORDER_PAGE = """<!DOCTYPE html>
   </div>
   <div class="product">
     <div class="product-info">
-      <h2>Download (e-mail)</h2>
+      <h2>Download (text)</h2>
       <div class="price">$5.55</div>
     </div>
     <div class="qty">
@@ -101,8 +109,8 @@ ORDER_PAGE = """<!DOCTYPE html>
     </div>
   </div>
   <div class="email-section">
-    <p>Enter your email address to receive your download.</p>
-    <input type="email" id="email" placeholder="Email Address">
+    <p>Enter your phone number to receive your download.</p>
+    <input type="tel" id="phone" placeholder="(555) 555-5555">
   </div>
   <button class="checkout-btn" id="checkout-btn" disabled onclick="checkout()">Select an item</button>
   <div class="error" id="error"></div>
@@ -130,12 +138,12 @@ function updateBtn() {
 }
 
 async function checkout() {
-  const email = document.getElementById('email').value;
+  const phone = document.getElementById('phone').value.replace(/\D/g, '');
   const errEl = document.getElementById('error');
   errEl.textContent = '';
 
-  if (qty.download > 0 && !email) {
-    errEl.textContent = 'Email is required for downloads.';
+  if (qty.download > 0 && phone.length < 10) {
+    errEl.textContent = 'Valid phone number is required for downloads.';
     return;
   }
 
@@ -147,7 +155,7 @@ async function checkout() {
     const res = await fetch('/create-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ print_qty: qty.print, download_qty: qty.download, email })
+      body: JSON.stringify({ print_qty: qty.print, download_qty: qty.download, phone })
     });
     const data = await res.json();
     if (data.checkout_url) {
@@ -176,7 +184,7 @@ async def create_checkout(request: Request):
     data = await request.json()
     print_qty = data.get("print_qty", 0)
     download_qty = data.get("download_qty", 0)
-    email = data.get("email", "")
+    phone = data.get("phone", "")
 
     if print_qty == 0 and download_qty == 0:
         raise HTTPException(status_code=400, detail="Select at least one item")
@@ -195,7 +203,7 @@ async def create_checkout(request: Request):
         line_items.append({
             "price_data": {
                 "currency": "usd",
-                "product_data": {"name": "Download (e-mail)"},
+                "product_data": {"name": "Download (text)"},
                 "unit_amount": PRODUCTS["download"]["amount"],
             },
             "quantity": download_qty,
@@ -211,11 +219,9 @@ async def create_checkout(request: Request):
         "metadata": {
             "print_qty": str(print_qty),
             "download_qty": str(download_qty),
+            "phone": phone,
         },
     }
-
-    if email:
-        checkout_params["customer_email"] = email
 
     checkout_session = stripe.checkout.Session.create(**checkout_params)
 
@@ -259,7 +265,7 @@ async def stripe_webhook(request: Request):
             "status": "paid",
             "used": False,
             "created_at": datetime.now().isoformat(),
-            "customer_email": session_data.get("customer_details", {}).get("email"),
+            "phone": metadata.get("phone", ""),
             "print_qty": int(metadata.get("print_qty", "0")),
             "download_qty": int(metadata.get("download_qty", "0")),
         }
@@ -312,16 +318,47 @@ async def start_session(token: str):
     return {"status": "started", "message": "Session activated"}
 
 
-@app.post("/email/send")
-async def send_email(request: Request):
+@app.get("/media/{media_id}")
+async def serve_media(media_id: str):
+    if media_id not in media_store:
+        raise HTTPException(status_code=404, detail="Media not found")
+    return Response(content=media_store[media_id], media_type="image/jpeg")
+
+
+@app.post("/sms/send")
+async def send_sms(request: Request):
     data = await request.json()
-    email = data.get("email")
-    image_base64 = data.get("image")
+    phone = data.get("phone", "")
+    image_base64 = data.get("image", "")
+    session_id = data.get("session_id", "")
 
-    # TODO: wire SendGrid in Phase 2
-    print(f"Would send email to: {email}")
+    if not phone and session_id and session_id in sessions:
+        phone = sessions[session_id].get("phone", "")
 
-    return {"status": "sent", "email": email}
+    if not phone:
+        raise HTTPException(status_code=400, detail="No phone number provided")
+
+    if not phone.startswith("+"):
+        phone = "+1" + phone.lstrip("1")
+
+    image_data = base64.b64decode(image_base64.replace("data:image/jpeg;base64,", ""))
+    media_id = str(uuid.uuid4())
+    media_store[media_id] = image_data
+    media_url = f"{BASE_URL}/media/{media_id}"
+
+    try:
+        client = TwilioClient(TWILIO_SID, TWILIO_AUTH)
+        client.messages.create(
+            body="Here's your photo strip from New York Memento!",
+            from_=TWILIO_PHONE,
+            to=phone,
+            media_url=[media_url],
+        )
+        print(f"MMS sent to {phone}")
+        return {"status": "sent", "phone": phone}
+    except Exception as e:
+        print(f"MMS failed to {phone}: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @app.get("/qr/generate")
