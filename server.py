@@ -3,8 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 import stripe
 import os
+import json
 import uuid
-from datetime import datetime
+import tempfile
+import shutil
+from datetime import datetime, timedelta
 from twilio.rest import Client as TwilioClient
 import qrcode
 from io import BytesIO
@@ -28,8 +31,82 @@ TWILIO_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE = os.getenv("TWILIO_PHONE_NUMBER")
 
-# Keyed by Stripe checkout session id. In-memory only — wiped on Railway restart.
-sessions = {}
+SESSIONS_DIR = os.getenv("SESSIONS_DIR", "/data")
+SESSIONS_FILE = os.path.join(SESSIONS_DIR, "sessions.json")
+SESSIONS_BACKUP = os.path.join(SESSIONS_DIR, "sessions.backup.json")
+SESSION_MAX_AGE_DAYS = 30
+
+
+def _ensure_dir():
+    """Create sessions directory if it doesn't exist."""
+    os.makedirs(SESSIONS_DIR, exist_ok=True)
+
+
+def load_sessions():
+    """Load sessions from persistent JSON file with backup fallback."""
+    _ensure_dir()
+    for filepath in [SESSIONS_FILE, SESSIONS_BACKUP]:
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    print(f"Loaded {len(data)} sessions from {filepath}")
+                    return data
+        except (FileNotFoundError, json.JSONDecodeError, PermissionError) as e:
+            print(f"Could not load {filepath}: {e}")
+            continue
+    print("No existing sessions found, starting fresh")
+    return {}
+
+
+def save_sessions():
+    """Atomic write: write to temp file, then rename. Keeps a backup."""
+    _ensure_dir()
+    try:
+        # Write to temp file first
+        fd, tmp_path = tempfile.mkstemp(dir=SESSIONS_DIR, suffix=".json.tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(sessions, f, indent=2)
+        except Exception:
+            os.unlink(tmp_path)
+            raise
+
+        # Backup the current file before replacing
+        if os.path.exists(SESSIONS_FILE):
+            shutil.copy2(SESSIONS_FILE, SESSIONS_BACKUP)
+
+        # Atomic rename (same filesystem)
+        shutil.move(tmp_path, SESSIONS_FILE)
+    except Exception as e:
+        print(f"ERROR saving sessions: {e}")
+        # Last-resort direct write
+        try:
+            with open(SESSIONS_FILE, "w") as f:
+                json.dump(sessions, f)
+        except Exception as e2:
+            print(f"CRITICAL: Could not save sessions at all: {e2}")
+
+
+def cleanup_old_sessions():
+    """Remove used sessions older than SESSION_MAX_AGE_DAYS to prevent file bloat."""
+    cutoff = (datetime.now() - timedelta(days=SESSION_MAX_AGE_DAYS)).isoformat()
+    removed = 0
+    to_remove = []
+    for sid, session in sessions.items():
+        if session.get("used") and session.get("created_at", "") < cutoff:
+            to_remove.append(sid)
+    for sid in to_remove:
+        del sessions[sid]
+        removed += 1
+    if removed > 0:
+        save_sessions()
+        print(f"Cleaned up {removed} old sessions")
+
+
+sessions = load_sessions()
+cleanup_old_sessions()
+
 # Temporary media store for MMS images — keyed by random ID.
 media_store = {}
 
@@ -43,7 +120,15 @@ LOGO_PATH = os.path.join(os.path.dirname(__file__), "logo.png")
 
 @app.get("/")
 async def root():
-    return {"status": "Memento Booth API is running", "timestamp": datetime.now().isoformat()}
+    total = len(sessions)
+    unused = sum(1 for s in sessions.values() if not s.get("used"))
+    return {
+        "status": "Memento Booth API is running",
+        "timestamp": datetime.now().isoformat(),
+        "sessions_total": total,
+        "sessions_available": unused,
+        "persistence": SESSIONS_FILE,
+    }
 
 
 @app.get("/logo.png")
@@ -270,6 +355,7 @@ async def stripe_webhook(request: Request):
             "download_qty": int(metadata.get("download_qty", "0")),
         }
 
+        save_sessions()
         print(f"Payment received for session {session_id}")
 
     return {"status": "success"}
@@ -314,6 +400,7 @@ async def start_session(token: str):
 
     sessions[token]["used"] = True
     sessions[token]["started_at"] = datetime.now().isoformat()
+    save_sessions()
 
     return {"status": "started", "message": "Session activated"}
 

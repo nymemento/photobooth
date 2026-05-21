@@ -241,6 +241,8 @@ export default function App() {
       endVideoRef.current.currentTime = 0;
       endVideoRef.current.play().catch(() => {});
     }
+    const fallback = setTimeout(() => setState(STATES.IDLE), 10000);
+    return () => clearTimeout(fallback);
   }, [state]);
 
   return (
