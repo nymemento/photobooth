@@ -36,8 +36,29 @@ function createWindow() {
 
 const outputDir = path.join(app.getPath("userData"), "photos");
 
+function cleanupOldPhotos() {
+  const maxAge = 7 * 24 * 60 * 60 * 1000;
+  try {
+    const files = fs.readdirSync(outputDir);
+    const now = Date.now();
+    let removed = 0;
+    for (const file of files) {
+      const filePath = path.join(outputDir, file);
+      const stat = fs.statSync(filePath);
+      if (now - stat.mtimeMs > maxAge) {
+        fs.unlinkSync(filePath);
+        removed++;
+      }
+    }
+    if (removed > 0) console.log(`Cleaned up ${removed} old photo files`);
+  } catch (err) {
+    console.error("Photo cleanup error:", err);
+  }
+}
+
 app.whenReady().then(() => {
   fs.mkdirSync(outputDir, { recursive: true });
+  cleanupOldPhotos();
   createWindow();
 });
 

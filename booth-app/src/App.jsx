@@ -54,10 +54,18 @@ export default function App() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
+      stream.getVideoTracks().forEach((track) => {
+        track.onended = () => {
+          setError("Camera disconnected. Restarting...");
+          stopCamera();
+          setTimeout(() => setState(STATES.IDLE), 3000);
+        };
+      });
     } catch (err) {
       setError("Camera not found. Connect Canon R100 via USB in webcam mode.");
+      setTimeout(() => setState(STATES.IDLE), 5000);
     }
-  }, []);
+  }, [stopCamera]);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -149,6 +157,14 @@ export default function App() {
     if (state !== STATES.CAPTURE) return;
 
     const doCapture = async () => {
+      const track = streamRef.current?.getVideoTracks()[0];
+      if (!track || track.readyState !== "live") {
+        setError("Camera lost. Restarting...");
+        stopCamera();
+        setTimeout(() => setState(STATES.IDLE), 3000);
+        return;
+      }
+
       setFlash(true);
       setTimeout(() => setFlash(false), 200);
 
@@ -215,10 +231,14 @@ export default function App() {
       if (printQty > 0) {
         try {
           if (window.booth && sheetPath) {
-            await window.booth.printStrip(sheetPath);
+            const result = await window.booth.printStrip(sheetPath);
+            if (result && !result.success) {
+              setError("Print issue — staff has been notified.");
+            }
           }
         } catch (err) {
           console.error("Print failed:", err);
+          setError("Print issue — staff has been notified.");
         }
       }
 
@@ -230,10 +250,11 @@ export default function App() {
           });
         } catch (err) {
           console.error("SMS failed:", err);
+          setError("Text delivery failed. Visit the booth for help.");
         }
       }
 
-      setTimeout(() => setState(STATES.COMPLETE), 2000);
+      setTimeout(() => setState(STATES.COMPLETE), 3000);
     };
     print();
   }, [state, sheetPath, printQty, downloadQty, stripPreview, sessionId]);
