@@ -4,3 +4,6 @@ __pycache__/
 .DS_Store
 *.db
 sessions.json
+node_modules/
+booth-app/node_modules/
+booth-app/dist/
