@@ -13,6 +13,7 @@ const STATES = {
   READY: "READY",
   COUNTDOWN: "COUNTDOWN",
   CAPTURE: "CAPTURE",
+  PREVIEW: "PREVIEW",
   PROCESS: "PROCESS",
   PRINT: "PRINT",
   EMAIL: "EMAIL",
@@ -89,14 +90,14 @@ export default function App() {
     }
   }, []);
 
-  // Dev shortcuts: 1=IDLE 2=POLLING 3=READY 4=COUNTDOWN 5=CAPTURE 6=PROCESS 7=PRINT 8=EMAIL 9=COMPLETE
+  // Dev shortcuts: 1=IDLE 2=POLLING 3=READY 4=COUNTDOWN 5=CAPTURE 6=PREVIEW 7=PROCESS 8=PRINT 9=COMPLETE
   useEffect(() => {
     if (import.meta.env.PROD) return;
     const handler = (e) => {
       const map = {
         "1": STATES.IDLE, "2": STATES.POLLING, "3": STATES.READY,
-        "4": STATES.COUNTDOWN, "5": STATES.CAPTURE, "6": STATES.PROCESS,
-        "7": STATES.PRINT, "8": STATES.EMAIL, "9": STATES.COMPLETE,
+        "4": STATES.COUNTDOWN, "5": STATES.CAPTURE, "6": STATES.PREVIEW,
+        "7": STATES.PROCESS, "8": STATES.PRINT, "9": STATES.COMPLETE,
       };
       if (map[e.key]) setState(map[e.key]);
     };
@@ -153,22 +154,27 @@ export default function App() {
       const frame = captureFrame();
       if (!frame) return;
 
-      setPhotos((prev) => {
-        const next = [...prev, frame];
-        if (next.length >= 4) {
-          stopCamera();
-          setState(STATES.PROCESS);
-        } else {
-          setPhotoIndex((i) => i + 1);
-          setState(STATES.COUNTDOWN);
-        }
-        return next;
-      });
+      setPhotos((prev) => [...prev, frame]);
+      setState(STATES.PREVIEW);
     };
 
     const timer = setTimeout(doCapture, 300);
     return () => clearTimeout(timer);
   }, [state, captureFrame, stopCamera]);
+
+  useEffect(() => {
+    if (state !== STATES.PREVIEW) return;
+    const timer = setTimeout(() => {
+      if (photos.length >= 4) {
+        stopCamera();
+        setState(STATES.PROCESS);
+      } else {
+        setPhotoIndex((i) => i + 1);
+        setState(STATES.COUNTDOWN);
+      }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [state, photos.length, stopCamera]);
 
   useEffect(() => {
     if (state !== STATES.PROCESS) return;
@@ -338,6 +344,26 @@ export default function App() {
           <p className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/60 text-lg">
             Photo {photoIndex + 1} of 4
           </p>
+        </div>
+      )}
+
+      {state === STATES.PREVIEW && photos.length > 0 && (
+        <div className="fixed inset-0 bg-black flex items-center justify-center">
+          <img
+            src={photos[photos.length - 1]}
+            alt="Preview"
+            className="max-h-full max-w-full object-contain"
+          />
+          <p className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/60 text-lg">
+            Photo {photos.length} of 4
+          </p>
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="hidden"
+          />
         </div>
       )}
 
