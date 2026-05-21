@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut } = require("electron");
+const { app, BrowserWindow, ipcMain, globalShortcut, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { execFile } = require("child_process");
@@ -67,6 +67,14 @@ function createWindow() {
       mainWindow.webContents.reload();
     });
   }
+
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    if (permission === "media") {
+      callback(true);
+      return;
+    }
+    callback(false);
+  });
 
   if (isDev) {
     mainWindow.webContents.openDevTools({ mode: "detach" });
