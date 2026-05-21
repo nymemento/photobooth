@@ -246,13 +246,13 @@ export default function App() {
 
       if (downloadQty > 0 && stripPreview) {
         try {
-          await axios.post(`${API_URL}/sms/send`, {
+          await axios.post(`${API_URL}/email/send`, {
             session_id: sessionId,
             image: stripPreview,
           });
         } catch (err) {
-          console.error("SMS failed:", err);
-          setError("Text delivery failed. Visit the booth for help.");
+          console.error("Email failed:", err);
+          setError("Email delivery failed. Visit the booth for help.");
         }
       }
 

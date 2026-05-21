@@ -9,6 +9,7 @@ import tempfile
 import shutil
 from datetime import datetime, timedelta
 from twilio.rest import Client as TwilioClient
+import resend
 import qrcode
 from io import BytesIO
 import base64
@@ -32,6 +33,9 @@ BASE_URL = os.getenv("BASE_URL", "https://photobooth-production-e5fa.up.railway.
 TWILIO_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE = os.getenv("TWILIO_PHONE_NUMBER")
+
+resend.api_key = os.getenv("RESEND_API_KEY")
+RESEND_FROM = os.getenv("RESEND_FROM_EMAIL", "Memento <photos@nymemento.com>")
 
 SESSIONS_DIR = os.getenv("SESSIONS_DIR", "/data")
 SESSIONS_FILE = os.path.join(SESSIONS_DIR, "sessions.json")
@@ -115,7 +119,7 @@ media_store = {}
 
 PRODUCTS = {
     "print": {"name": "Print (2 copies)", "amount": 1111},
-    "download": {"name": "Download (text)", "amount": 555},
+    "download": {"name": "Download (e-mail)", "amount": 555},
 }
 
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "logo.png")
@@ -187,7 +191,7 @@ ORDER_PAGE = """<!DOCTYPE html>
   </div>
   <div class="product">
     <div class="product-info">
-      <h2>Download (text)</h2>
+      <h2>Download (e-mail)</h2>
       <div class="price">$5.55</div>
     </div>
     <div class="qty">
@@ -197,8 +201,8 @@ ORDER_PAGE = """<!DOCTYPE html>
     </div>
   </div>
   <div class="email-section">
-    <p>Enter your phone number to receive your download.</p>
-    <input type="tel" id="phone" placeholder="(555) 555-5555">
+    <p>Enter your e-mail to receive your download.</p>
+    <input type="email" id="email" placeholder="you@example.com">
   </div>
   <button class="checkout-btn" id="checkout-btn" disabled onclick="checkout()">Select an item</button>
   <div class="error" id="error"></div>
@@ -226,12 +230,12 @@ function updateBtn() {
 }
 
 async function checkout() {
-  const phone = document.getElementById('phone').value.replace(/\D/g, '');
+  const email = document.getElementById('email').value.trim();
   const errEl = document.getElementById('error');
   errEl.textContent = '';
 
-  if (qty.download > 0 && phone.length < 10) {
-    errEl.textContent = 'Valid phone number is required for downloads.';
+  if (qty.download > 0 && (!email || !email.includes('@'))) {
+    errEl.textContent = 'Valid e-mail is required for downloads.';
     return;
   }
 
@@ -243,7 +247,7 @@ async function checkout() {
     const res = await fetch('/create-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ print_qty: qty.print, download_qty: qty.download, phone })
+      body: JSON.stringify({ print_qty: qty.print, download_qty: qty.download, email })
     });
     const data = await res.json();
     if (data.checkout_url) {
@@ -272,7 +276,7 @@ async def create_checkout(request: Request):
     data = await request.json()
     print_qty = data.get("print_qty", 0)
     download_qty = data.get("download_qty", 0)
-    phone = data.get("phone", "")
+    email = data.get("email", "")
 
     if print_qty == 0 and download_qty == 0:
         raise HTTPException(status_code=400, detail="Select at least one item")
@@ -291,7 +295,7 @@ async def create_checkout(request: Request):
         line_items.append({
             "price_data": {
                 "currency": "usd",
-                "product_data": {"name": "Download (text)"},
+                "product_data": {"name": "Download (e-mail)"},
                 "unit_amount": PRODUCTS["download"]["amount"],
             },
             "quantity": download_qty,
@@ -307,7 +311,7 @@ async def create_checkout(request: Request):
         "metadata": {
             "print_qty": str(print_qty),
             "download_qty": str(download_qty),
-            "phone": phone,
+            "email": email,
         },
     }
 
@@ -353,7 +357,7 @@ async def stripe_webhook(request: Request):
             "status": "paid",
             "used": False,
             "created_at": datetime.now().isoformat(),
-            "phone": metadata.get("phone", ""),
+            "email": metadata.get("email", ""),
             "print_qty": int(metadata.get("print_qty", "0")),
             "download_qty": int(metadata.get("download_qty", "0")),
         }
@@ -451,6 +455,42 @@ async def send_sms(request: Request):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@app.post("/email/send")
+async def send_email(request: Request):
+    data = await request.json()
+    to_email = data.get("email", "")
+    image_base64 = data.get("image", "")
+    session_id = data.get("session_id", "")
+
+    if not to_email and session_id and session_id in sessions:
+        to_email = sessions[session_id].get("email", "")
+
+    if not to_email:
+        raise HTTPException(status_code=400, detail="No email provided")
+
+    image_data = base64.b64decode(image_base64.replace("data:image/jpeg;base64,", ""))
+
+    try:
+        resend.Emails.send({
+            "from": RESEND_FROM,
+            "to": [to_email],
+            "subject": "Your photo strip from New York Memento",
+            "html": "<p>Thanks for visiting New York Memento! Here's your photo strip.</p>",
+            "attachments": [
+                {
+                    "filename": "memento-strip.jpg",
+                    "content": list(image_data),
+                    "content_type": "image/jpeg",
+                }
+            ],
+        })
+        print(f"Email sent to {to_email}")
+        return {"status": "sent", "email": to_email}
+    except Exception as e:
+        print(f"Email failed to {to_email}: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @app.post("/photos/upload")
 async def upload_photo(request: Request):
     data = await request.json()
@@ -510,7 +550,7 @@ ADMIN_PAGE = """<!DOCTYPE html>
 <body>
 <h1>MEMENTO — Photo Lookup</h1>
 <div class="search">
-  <input type="text" id="search" placeholder="Search by phone number..." oninput="filter()">
+  <input type="text" id="search" placeholder="Search by email..." oninput="filter()">
 </div>
 <div class="grid" id="grid"></div>
 <div class="empty" id="empty" style="display:none">No matching sessions found.</div>
@@ -524,9 +564,9 @@ async function load() {
 }
 
 function filter() {
-  const q = document.getElementById('search').value.replace(/\\D/g, '');
+  const q = document.getElementById('search').value.toLowerCase().trim();
   if (!q) { render(allSessions); return; }
-  render(allSessions.filter(s => s.phone.includes(q)));
+  render(allSessions.filter(s => s.email.toLowerCase().includes(q)));
 }
 
 function render(sessions) {
@@ -539,7 +579,7 @@ function render(sessions) {
       <img src="/admin/photos/${s.session_id}/image" alt="Photo strip"
            onclick="window.open(this.src, '_blank')" loading="lazy">
       <div class="info">
-        <div class="phone">${s.phone || 'No phone'}</div>
+        <div class="phone">${s.email || 'No email'}</div>
         <div class="meta">${s.date} &middot; $${(s.amount/100).toFixed(2)}</div>
       </div>
       <div class="actions">
@@ -568,7 +608,7 @@ async def admin_photos_data():
             continue
         results.append({
             "session_id": sid,
-            "phone": session.get("phone", ""),
+            "email": session.get("email", ""),
             "date": session.get("created_at", "")[:16].replace("T", " "),
             "amount": session.get("amount", 0),
             "print_qty": session.get("print_qty", 0),
