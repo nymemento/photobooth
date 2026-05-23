@@ -156,12 +156,25 @@ ipcMain.handle("create-strip", async (_event, photosBase64) => {
     composite.push({ input: resized, top: photoTops[i], left: 0 });
   }
 
-  const overlayPath = path.join(__dirname, "assets", "overlay.png");
-  if (fs.existsSync(overlayPath)) {
-    const overlay = await sharp(overlayPath)
-      .resize(stripWidth, stripHeight)
-      .toBuffer();
-    composite.push({ input: overlay, top: 0, left: 0 });
+  // Try multiple overlay paths: extraResources (unpacked), then ASAR (read via fs.readFileSync)
+  const overlayPaths = [
+    path.join(process.resourcesPath, "assets", "overlay.png"),
+    path.join(__dirname, "assets", "overlay.png"),
+  ];
+  for (const overlayPath of overlayPaths) {
+    try {
+      if (fs.existsSync(overlayPath)) {
+        // Read via Node's fs (ASAR-aware) then pass buffer to Sharp
+        const overlayBuf = fs.readFileSync(overlayPath);
+        const overlay = await sharp(overlayBuf)
+          .resize(stripWidth, stripHeight)
+          .toBuffer();
+        composite.push({ input: overlay, top: 0, left: 0 });
+        break;
+      }
+    } catch (err) {
+      console.error(`Overlay load failed from ${overlayPath}:`, err);
+    }
   }
 
   const stripBuffer = await sharp({
@@ -209,21 +222,30 @@ ipcMain.handle("create-strip", async (_event, photosBase64) => {
 
 ipcMain.handle("print-strip", async (_event, sheetPath) => {
   return new Promise((resolve) => {
+    if (!fs.existsSync(sheetPath)) {
+      console.error("Print file not found:", sheetPath);
+      resolve({ success: false, error: "Print file not found: " + sheetPath });
+      return;
+    }
+
     if (process.platform === "win32") {
+      // Use PowerShell Start-Process -Verb Print (most reliable on Windows 11)
+      const psCmd = `Start-Process -FilePath "${sheetPath}" -Verb Print -WindowStyle Hidden`;
       execFile(
-        "rundll32",
-        ["shimgvw.dll,ImageView_PrintTo", `/pt`, sheetPath, ""],
+        "powershell",
+        ["-NoProfile", "-Command", psCmd],
         { timeout: 30000 },
         (err) => {
           if (err) {
-            console.error("Print via shimgvw failed, trying fallback:", err);
+            console.error("Print via PowerShell failed, trying rundll32:", err);
+            // Fallback: rundll32 with printto verb
             execFile(
-              "mspaint",
-              ["/p", sheetPath],
+              "rundll32",
+              ["shimgvw.dll,ImageView_PrintTo", "/pt", sheetPath],
               { timeout: 30000 },
               (err2) => {
                 if (err2) {
-                  console.error("Print fallback failed:", err2);
+                  console.error("Print fallback also failed:", err2);
                   resolve({ success: false, error: err2.message });
                 } else {
                   resolve({ success: true });

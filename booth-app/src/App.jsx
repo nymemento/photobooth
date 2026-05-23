@@ -226,7 +226,7 @@ export default function App() {
     if (state !== STATES.PROCESS) return;
     if (photos.length < 4) return;
 
-    const process = async () => {
+    const process = async (attempt = 1) => {
       try {
         let strip;
         if (window.booth) {
@@ -246,7 +246,12 @@ export default function App() {
 
         setState(STATES.PRINT);
       } catch (err) {
-        setError("Failed to create strip: " + err.message);
+        console.error(`Strip creation failed (attempt ${attempt}):`, err);
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 1000));
+          return process(attempt + 1);
+        }
+        setError("Failed to create strip. Staff has been notified.");
         setTimeout(() => setState(STATES.IDLE), 5000);
       }
     };
@@ -256,19 +261,32 @@ export default function App() {
   useEffect(() => {
     if (state !== STATES.PRINT) return;
 
+    const tryPrint = async (attempt = 1) => {
+      try {
+        if (window.booth && sheetPath) {
+          const result = await window.booth.printStrip(sheetPath);
+          if (result && !result.success) {
+            if (attempt < 3) {
+              console.error(`Print failed (attempt ${attempt}): ${result.error}`);
+              await new Promise((r) => setTimeout(r, 2000));
+              return tryPrint(attempt + 1);
+            }
+            setError("Print issue — staff has been notified.");
+          }
+        }
+      } catch (err) {
+        console.error(`Print error (attempt ${attempt}):`, err);
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 2000));
+          return tryPrint(attempt + 1);
+        }
+        setError("Print issue — staff has been notified.");
+      }
+    };
+
     const print = async () => {
       if (printQty > 0) {
-        try {
-          if (window.booth && sheetPath) {
-            const result = await window.booth.printStrip(sheetPath);
-            if (result && !result.success) {
-              setError("Print issue — staff has been notified.");
-            }
-          }
-        } catch (err) {
-          console.error("Print failed:", err);
-          setError("Print issue — staff has been notified.");
-        }
+        await tryPrint();
       }
 
       if (downloadQty > 0 && stripPreview) {
