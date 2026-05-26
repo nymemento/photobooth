@@ -147,11 +147,10 @@ ipcMain.handle("create-strip", async (_event, photosBase64) => {
     const resized = await sharp(buf)
       .resize(stripWidth, photoHeight, { fit: "cover" })
       .greyscale()
-      .normalize()
-      .linear(2.05, -51)
-      .modulate({ brightness: 0.82 })
-      .gamma(1.05)
-      .tint({ r: 216, g: 204, b: 189 })
+      .gamma(1.25)
+      .linear(1.3, 12)
+      .modulate({ brightness: 0.93 })
+      .tint({ r: 205, g: 183, b: 155 })
       .toBuffer();
     composite.push({ input: resized, top: photoTops[i], left: 0 });
   }
@@ -230,19 +229,32 @@ ipcMain.handle("print-strip", async (_event, sheetPath) => {
     // Use a hidden BrowserWindow for silent printing (works with all printers)
     const printWin = new BrowserWindow({
       show: false,
-      width: 1200,
-      height: 1800,
+      width: 1800,
+      height: 1200,
       webPreferences: { contextIsolation: true },
     });
 
     const imageData = fs.readFileSync(sheetPath);
     const base64 = imageData.toString("base64");
-    const html = `<html><body style="margin:0;padding:0;"><img src="data:image/jpeg;base64,${base64}" style="width:100%;height:100%;"></body></html>`;
+    const html = `<html>
+<head><style>
+  @page { size: 6in 4in; margin: 0; }
+  html, body { margin: 0; padding: 0; width: 6in; height: 4in; overflow: hidden; }
+  img { width: 100%; height: 100%; object-fit: contain; display: block; }
+</style></head>
+<body><img src="data:image/jpeg;base64,${base64}"></body>
+</html>`;
 
     printWin.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
 
     printWin.webContents.on("did-finish-load", () => {
-      printWin.webContents.print({ silent: true, printBackground: true }, (success, failureReason) => {
+      printWin.webContents.print({
+        silent: true,
+        printBackground: true,
+        landscape: true,
+        margins: { marginType: "none" },
+        pageSize: { width: 152400, height: 101600 },
+      }, (success, failureReason) => {
         if (!success) {
           console.error("Silent print failed:", failureReason);
           // Fallback to PowerShell
