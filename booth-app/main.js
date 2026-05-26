@@ -147,10 +147,15 @@ ipcMain.handle("create-strip", async (_event, photosBase64) => {
     const resized = await sharp(buf)
       .resize(stripWidth, photoHeight, { fit: "cover" })
       .greyscale()
-      .gamma(1.25)
-      .linear(1.3, 12)
-      .modulate({ brightness: 0.93 })
-      .tint({ r: 205, g: 183, b: 155 })
+      .gamma(1.2)
+      .linear(1.35, 8)
+      .modulate({ brightness: 0.91 })
+      .toColourspace("srgb")
+      .recomb([
+        [1.05, 0.0, 0.0],
+        [0.0, 0.95, 0.0],
+        [0.0, 0.0, 0.82],
+      ])
       .toBuffer();
     composite.push({ input: resized, top: photoTops[i], left: 0 });
   }
