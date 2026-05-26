@@ -138,7 +138,7 @@ ipcMain.handle("create-strip", async (_event, photosBase64) => {
   const stripWidth = 600;
   const stripHeight = 1800;
   const photoHeight = 400;
-  const photoTops = [33, 490, 944, 1392];
+  const photoTops = [25, 475, 925, 1375];
 
   const composite = [];
 
@@ -221,52 +221,61 @@ ipcMain.handle("create-strip", async (_event, photosBase64) => {
 });
 
 ipcMain.handle("print-strip", async (_event, sheetPath) => {
-  return new Promise((resolve) => {
-    if (!fs.existsSync(sheetPath)) {
-      console.error("Print file not found:", sheetPath);
-      resolve({ success: false, error: "Print file not found: " + sheetPath });
-      return;
-    }
+  if (!fs.existsSync(sheetPath)) {
+    console.error("Print file not found:", sheetPath);
+    return { success: false, error: "Print file not found: " + sheetPath };
+  }
 
-    if (process.platform === "win32") {
-      // Use PowerShell Start-Process -Verb Print (most reliable on Windows 11)
-      const psCmd = `Start-Process -FilePath "${sheetPath}" -Verb Print -WindowStyle Hidden`;
-      execFile(
-        "powershell",
-        ["-NoProfile", "-Command", psCmd],
-        { timeout: 30000 },
-        (err) => {
-          if (err) {
-            console.error("Print via PowerShell failed, trying rundll32:", err);
-            // Fallback: rundll32 with printto verb
-            execFile(
-              "rundll32",
-              ["shimgvw.dll,ImageView_PrintTo", "/pt", sheetPath],
-              { timeout: 30000 },
-              (err2) => {
-                if (err2) {
-                  console.error("Print fallback also failed:", err2);
-                  resolve({ success: false, error: err2.message });
-                } else {
-                  resolve({ success: true });
-                }
+  return new Promise((resolve) => {
+    // Use a hidden BrowserWindow for silent printing (works with all printers)
+    const printWin = new BrowserWindow({
+      show: false,
+      width: 1200,
+      height: 1800,
+      webPreferences: { contextIsolation: true },
+    });
+
+    const imageData = fs.readFileSync(sheetPath);
+    const base64 = imageData.toString("base64");
+    const html = `<html><body style="margin:0;padding:0;"><img src="data:image/jpeg;base64,${base64}" style="width:100%;height:100%;"></body></html>`;
+
+    printWin.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+
+    printWin.webContents.on("did-finish-load", () => {
+      printWin.webContents.print({ silent: true, printBackground: true }, (success, failureReason) => {
+        if (!success) {
+          console.error("Silent print failed:", failureReason);
+          // Fallback to PowerShell
+          if (process.platform === "win32") {
+            const psCmd = `Start-Process -FilePath "${sheetPath}" -Verb Print -WindowStyle Hidden`;
+            execFile("powershell", ["-NoProfile", "-Command", psCmd], { timeout: 30000 }, (err) => {
+              printWin.destroy();
+              if (err) {
+                console.error("PowerShell print also failed:", err);
+                resolve({ success: false, error: failureReason });
+              } else {
+                resolve({ success: true });
               }
-            );
+            });
           } else {
-            resolve({ success: true });
+            printWin.destroy();
+            resolve({ success: false, error: failureReason });
           }
-        }
-      );
-    } else {
-      execFile("lp", [sheetPath], (err) => {
-        if (err) {
-          console.error("Print error:", err);
-          resolve({ success: false, error: err.message });
         } else {
+          console.log("Print sent successfully");
+          printWin.destroy();
           resolve({ success: true });
         }
       });
-    }
+    });
+
+    // Safety timeout
+    setTimeout(() => {
+      if (!printWin.isDestroyed()) {
+        printWin.destroy();
+        resolve({ success: false, error: "Print timed out" });
+      }
+    }, 30000);
   });
 });
 

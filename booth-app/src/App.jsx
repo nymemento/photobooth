@@ -471,7 +471,7 @@ export default function App() {
           <img
             src={photos[photos.length - 1]}
             alt="Preview"
-            className="relative z-10 rounded-2xl shadow-2xl object-cover"
+            className="relative z-10 shadow-2xl object-cover"
             style={{ width: "28%", aspectRatio: "4/3" }}
           />
           <video
