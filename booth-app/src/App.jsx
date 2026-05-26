@@ -61,14 +61,25 @@ export default function App() {
   const startCamera = useCallback(async () => {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const videoDevices = devices.filter((d) => d.kind === "videoinput");
+    console.log("Available cameras:", videoDevices.map((d) => `${d.label} [${d.deviceId.slice(0, 8)}]`));
+
+    // Find external camera: Canon EOS, or any non-built-in camera
     const canon = videoDevices.find(
       (d) => d.label.toLowerCase().includes("eos") || d.label.toLowerCase().includes("canon")
     );
-    const deviceId = canon
-      ? canon.deviceId
-      : videoDevices.length > 1
-        ? videoDevices[videoDevices.length - 1].deviceId
-        : undefined;
+    const external = canon || videoDevices.find(
+      (d) => !d.label.toLowerCase().includes("front") &&
+             !d.label.toLowerCase().includes("ir ") &&
+             !d.label.toLowerCase().includes("surface") &&
+             !d.label.toLowerCase().includes("integrated") &&
+             !d.label.toLowerCase().includes("built-in") &&
+             d.label !== ""
+    );
+    // If multiple cameras, prefer external (last listed) over built-in (first listed)
+    const target = external || (videoDevices.length > 1 ? videoDevices[videoDevices.length - 1] : videoDevices[0]);
+    const deviceId = target?.deviceId;
+
+    console.log("Selected camera:", target?.label || "default", deviceId?.slice(0, 8));
 
     const constraints = {
       video: {
@@ -85,6 +96,7 @@ export default function App() {
       videoRef.current.srcObject = stream;
     }
     stream.getVideoTracks().forEach((track) => {
+      console.log("Active camera track:", track.label, track.getSettings());
       track.onended = () => {
         setError("Camera disconnected. Restarting...");
         stopCamera();

@@ -17,6 +17,9 @@ import base64
 app = FastAPI(title="Memento Booth API")
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+# Electron production app loads from file:// which sends origin "null"
+if "null" not in ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS.append("null")
 
 app.add_middleware(
     CORSMiddleware,
